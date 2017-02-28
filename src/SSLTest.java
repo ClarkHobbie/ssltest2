@@ -1,19 +1,18 @@
 import javax.net.SocketFactory;
-import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLServerSocketFactory;
-import javax.net.ssl.TrustManagerFactory;
+import javax.net.ssl.*;
 import java.io.*;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.security.KeyStore;
 import java.security.SecureRandom;
+import java.security.cert.Certificate;
+import java.security.cert.X509Certificate;
 
 /**
  * Created by Clark on 2/27/2017.
  */
-public class SslTest {
+public class SSLTest {
     public static class Server implements Runnable {
         private Socket socket;
 
@@ -97,6 +96,25 @@ public class SslTest {
         }
     }
 
+    public static class AllTrustManager implements X509TrustManager {
+        private X509Certificate certificate;
+
+        public AllTrustManager (X509Certificate certificate) {
+            this.certificate = certificate;
+        }
+
+        public X509Certificate[] getAcceptedIssuers() {
+            X509Certificate[] returnValue = { certificate };
+            return returnValue;
+        }
+
+        public void checkClientTrusted(X509Certificate[] certs, String authType) {
+        }
+        public void checkServerTrusted(X509Certificate[] certs, String authType) {
+        }
+    }
+
+
     public static void closeIgnoreExceptions (Reader reader)
     {
         if (null != reader) {
@@ -141,22 +159,26 @@ public class SslTest {
 
     public void server (int port) {
         try {
-            String truststoreFilename = "truststore";
-            String truststorePassword = "whatever";
-            KeyStore trustStore = getKeyStore(truststoreFilename, truststorePassword);
+            String trustStoreFilename = "truststore";
+            String trustStorePassword = "whatever";
+            String trustStoreAlias = "ca";
+            // KeyStore trustStore = getKeyStore(trustStoreFilename, trustStorePassword);
 
             String keyStoreFilename = "serverkeystore";
             String keyStorePassword = "whatever";
             KeyStore keyStore = getKeyStore(keyStoreFilename, keyStorePassword);
 
-            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init(trustStore);
+            // TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            // trustManagerFactory.init(trustStore);
+            X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
+            TrustManager[] managers = getTrustManagers(certificate);
 
             KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
 
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
+            // sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
+            sslContext.init(keyManagerFactory.getKeyManagers(), managers, new SecureRandom());
 
             SSLServerSocketFactory serverSocketFactory = sslContext.getServerSocketFactory();
             ServerSocket serverSocket = serverSocketFactory.createServerSocket();
@@ -176,17 +198,37 @@ public class SslTest {
         }
     }
 
+    public static X509Certificate getCertificate (String filename, String password, String alias) {
+        KeyStore keyStore = null;
+        FileInputStream fileInputStream = null;
+        Certificate certificate = null;
+
+        try {
+            fileInputStream = new FileInputStream(filename);
+            keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+            keyStore.load(fileInputStream, password.toCharArray());
+            certificate = keyStore.getCertificate(alias);
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
+
+        return (X509Certificate) certificate;
+    }
+
     public void client (String host, int port) {
         try {
             String trustStoreFilename = "truststore";
             String trustStorePassword = "whatever";
-            KeyStore keyStore = getKeyStore(trustStoreFilename, trustStorePassword);
+            String trustStoreAlias = "ca";
+            X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
 
-            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            trustManagerFactory.init (keyStore);
+            // TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            // trustManagerFactory.init (keyStore);
 
+            TrustManager[] managers = getTrustManagers(certificate);
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init (null, trustManagerFactory.getTrustManagers(), new SecureRandom());
+            sslContext.init (null, managers, new SecureRandom());
 
             SocketFactory socketFactory = sslContext.getSocketFactory();
             System.out.println ("connecting to " + host + ":" + port);
@@ -202,11 +244,19 @@ public class SslTest {
     }
 
 
+
+    public static TrustManager[] getTrustManagers (X509Certificate certificate) {
+        AllTrustManager selfSignedTrustManager = new AllTrustManager(certificate);
+        TrustManager[] returnValue = { selfSignedTrustManager };
+        return returnValue;
+    }
+
+
     public static void main (String[] argv) {
         String mode = "server";
         String host = "localhost";
         int port = 6789;
-        SslTest sslTest = new SslTest();
+        SSLTest sslTest = new SSLTest();
 
         if (argv.length > 0)
             mode = argv[0];
@@ -216,7 +266,6 @@ public class SslTest {
 
         if (argv.length > 2)
             port = Integer.parseInt(argv[2]);
-
 
         if (mode.equalsIgnoreCase("server"))
             sslTest.server(port);
