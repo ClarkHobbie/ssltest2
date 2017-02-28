@@ -1,3 +1,4 @@
+import javax.net.ServerSocketFactory;
 import javax.net.SocketFactory;
 import javax.net.ssl.*;
 import java.io.*;
@@ -40,6 +41,7 @@ public class SSLTest {
                     s = in.readLine();
                     System.out.println ("got " +s);
                     out.println(s);
+                    out.flush();
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -82,6 +84,7 @@ public class SSLTest {
                     System.out.print(prompt);
                     s = inFromUser.readLine();
                     out.println(s);
+                    out.flush();
                     s = inFromSocket.readLine();
                     System.out.println(s);
                 } while (!s.equalsIgnoreCase("quit") && !s.equalsIgnoreCase("bye"));
@@ -114,6 +117,103 @@ public class SSLTest {
         }
     }
 
+
+    public static class CommandLine {
+        private String[] argv;
+        private int argIndex = 0;
+        private String mode = "server";
+        private boolean useTls = true;
+        private String host = "localhost";
+        private int port = 6789;
+
+        public String[] getArgv () {
+            return argv;
+        }
+
+        public String getArg () {
+            if (argIndex >= argv.length)
+                return null;
+
+            return argv[argIndex];
+        }
+
+        public void advance () {
+            argIndex++;
+        }
+
+        public String getMode () {
+            return mode;
+        }
+
+        public void setMode (String mode) {
+            this.mode = mode;
+        }
+
+        public boolean useTls () {
+            return useTls;
+        }
+
+        public void setUseTls (boolean useTls) {
+            this.useTls = useTls;
+        }
+
+        public String getHost () {
+            return host;
+        }
+
+        public void setHost (String host) {
+            this.host = host;
+        }
+
+        public int getPort () {
+            return port;
+        }
+
+        public void setPort (int port) {
+            this.port = port;
+        }
+
+        public CommandLine (String[] argv) {
+            this.argv = argv;
+            parse();
+        }
+
+        public void parse () {
+            if (argv.length < 1)
+                return;
+
+            if (null != getArg() && getArg().equalsIgnoreCase("nossl")) {
+                setUseTls(false);
+                advance();
+            }
+
+            if (null != getArg()) {
+                setMode(getArg());
+                advance();
+            }
+
+            if (null != getArg()) {
+                setHost(getArg());
+                advance();
+            }
+
+            if (null != getArg()) {
+                int temp = Integer.parseInt(getArg());
+                setPort(temp);
+                advance();
+            }
+        }
+    }
+
+    private boolean useTls = true;
+
+    public boolean useTls () {
+        return useTls;
+    }
+
+    public SSLTest (boolean useTls) {
+        this.useTls = useTls;
+    }
 
     public static void closeIgnoreExceptions (Reader reader)
     {
@@ -162,26 +262,34 @@ public class SSLTest {
             String trustStoreFilename = "truststore";
             String trustStorePassword = "whatever";
             String trustStoreAlias = "ca";
-            // KeyStore trustStore = getKeyStore(trustStoreFilename, trustStorePassword);
 
             String keyStoreFilename = "serverkeystore";
             String keyStorePassword = "whatever";
             KeyStore keyStore = getKeyStore(keyStoreFilename, keyStorePassword);
 
-            // TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            // trustManagerFactory.init(trustStore);
-            X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
-            TrustManager[] managers = getTrustManagers(certificate);
+            KeyStore trustStore = getKeyStore(trustStoreFilename, trustStorePassword);
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init(trustStore);
+            // X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
+            // TrustManager[] managers = getTrustManagers(certificate);
 
             KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
 
             SSLContext sslContext = SSLContext.getInstance("TLS");
             // sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
-            sslContext.init(keyManagerFactory.getKeyManagers(), managers, new SecureRandom());
+            sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
 
-            SSLServerSocketFactory serverSocketFactory = sslContext.getServerSocketFactory();
-            ServerSocket serverSocket = serverSocketFactory.createServerSocket();
+            ServerSocket serverSocket = null;
+
+            if (useTls()) {
+                SSLServerSocketFactory serverSocketFactory = sslContext.getServerSocketFactory();
+                serverSocket = serverSocketFactory.createServerSocket();
+            } else {
+                ServerSocketFactory serverSocketFactory = ServerSocketFactory.getDefault();
+                serverSocket = serverSocketFactory.createServerSocket();
+            }
+
             InetSocketAddress socketAddress = new InetSocketAddress(port);
             serverSocket.bind(socketAddress);
 
@@ -230,8 +338,13 @@ public class SSLTest {
             SSLContext sslContext = SSLContext.getInstance("TLS");
             sslContext.init (null, managers, new SecureRandom());
 
-            SocketFactory socketFactory = sslContext.getSocketFactory();
             System.out.println ("connecting to " + host + ":" + port);
+            SocketFactory socketFactory = SocketFactory.getDefault();
+
+            if (useTls()) {
+                socketFactory = sslContext.getSocketFactory();
+            }
+
             Socket socket = socketFactory.createSocket(host, port);
 
             Client client = new Client(socket, host + "> ");
@@ -253,26 +366,15 @@ public class SSLTest {
 
 
     public static void main (String[] argv) {
-        String mode = "server";
-        String host = "localhost";
-        int port = 6789;
-        SSLTest sslTest = new SSLTest();
+        CommandLine commandLine = new CommandLine(argv);
+        SSLTest sslTest = new SSLTest(commandLine.useTls());
 
-        if (argv.length > 0)
-            mode = argv[0];
-
-        if (argv.length > 1)
-            host = argv[1];
-
-        if (argv.length > 2)
-            port = Integer.parseInt(argv[2]);
-
-        if (mode.equalsIgnoreCase("server"))
-            sslTest.server(port);
-        else if (mode.equalsIgnoreCase("client"))
-            sslTest.client(host,port);
+        if (commandLine.getMode().equalsIgnoreCase("server"))
+            sslTest.server(commandLine.getPort());
+        else if (commandLine.getMode().equalsIgnoreCase("client"))
+            sslTest.client(commandLine.getHost(), commandLine.getPort());
         else {
-            System.err.println ("unknown mode: " + mode);
+            System.err.println ("unknown mode: " + commandLine.getMode());
         }
     }
 }
