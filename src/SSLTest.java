@@ -99,25 +99,6 @@ public class SSLTest {
         }
     }
 
-    public static class AllTrustManager implements X509TrustManager {
-        private X509Certificate certificate;
-
-        public AllTrustManager (X509Certificate certificate) {
-            this.certificate = certificate;
-        }
-
-        public X509Certificate[] getAcceptedIssuers() {
-            X509Certificate[] returnValue = { certificate };
-            return returnValue;
-        }
-
-        public void checkClientTrusted(X509Certificate[] certs, String authType) {
-        }
-        public void checkServerTrusted(X509Certificate[] certs, String authType) {
-        }
-    }
-
-
     public static class CommandLine {
         private String[] argv;
         private int argIndex = 0;
@@ -261,7 +242,6 @@ public class SSLTest {
         try {
             String trustStoreFilename = "truststore";
             String trustStorePassword = "whatever";
-            String trustStoreAlias = "ca";
 
             String keyStoreFilename = "serverkeystore";
             String keyStorePassword = "whatever";
@@ -270,14 +250,11 @@ public class SSLTest {
             KeyStore trustStore = getKeyStore(trustStoreFilename, trustStorePassword);
             TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
             trustManagerFactory.init(trustStore);
-            // X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
-            // TrustManager[] managers = getTrustManagers(certificate);
 
             KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
             keyManagerFactory.init(keyStore, keyStorePassword.toCharArray());
 
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            // sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
             sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), new SecureRandom());
 
             ServerSocket serverSocket = null;
@@ -329,14 +306,13 @@ public class SSLTest {
             String trustStoreFilename = "truststore";
             String trustStorePassword = "whatever";
             String trustStoreAlias = "ca";
-            X509Certificate certificate = getCertificate(trustStoreFilename, trustStorePassword, trustStoreAlias);
 
-            // TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-            // trustManagerFactory.init (keyStore);
+            KeyStore keyStore = getKeyStore(trustStoreFilename, trustStorePassword);
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init (keyStore);
 
-            TrustManager[] managers = getTrustManagers(certificate);
             SSLContext sslContext = SSLContext.getInstance("TLS");
-            sslContext.init (null, managers, new SecureRandom());
+            sslContext.init (null, trustManagerFactory.getTrustManagers(), new SecureRandom());
 
             System.out.println ("connecting to " + host + ":" + port);
             SocketFactory socketFactory = SocketFactory.getDefault();
@@ -355,15 +331,6 @@ public class SSLTest {
             System.exit(1);
         }
     }
-
-
-
-    public static TrustManager[] getTrustManagers (X509Certificate certificate) {
-        AllTrustManager selfSignedTrustManager = new AllTrustManager(certificate);
-        TrustManager[] returnValue = { selfSignedTrustManager };
-        return returnValue;
-    }
-
 
     public static void main (String[] argv) {
         CommandLine commandLine = new CommandLine(argv);
