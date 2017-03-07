@@ -323,7 +323,8 @@ public class SSLTest {
 
             Socket socket = socketFactory.createSocket(host, port);
 
-            Client client = new Client(socket, host + "> ");
+            String prompt = host + ":" + port + "> ";
+            Client client = new Client(socket, prompt);
             Thread thread = new Thread(client);
             thread.start();
         } catch (Exception e) {
